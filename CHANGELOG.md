@@ -21,9 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Summary
 
-Adapted NIP46 to last changes, added `NostrConnectRemoteSigner` to easily build remote signers (just construct it and call `serve` method),
-improved proxy options (allow to specify the proxy target: all relays or only `.onion` ones),
-improvements to NWC client, fixed equality operator for some foreign language (python still need to use `a.__eq__(b)`),
+Adapted NIP46 to last changes, added `NostrConnectRemoteSigner` to easily build remote signers (just construct it and call `serve` method), 
+improved proxy options (allow to specify the proxy target: all relays or only `.onion` ones), 
+improvements to NWC client, fixed equality operator for bindings (Python, Kotlin and Swift),
 added `nostrdb` storage backend, added NIP32 and completed NIP51 support and more!
 
 ### Changed
@@ -70,7 +70,7 @@ added `nostrdb` storage backend, added NIP32 and completed NIP51 support and mor
 * nostr: fix NIP46 `Request::from_message` deserialization ([Yuki Kishimoto])
 * nostr: fix `NostrConnectURI` serialization ([Yuki Kishimoto])
 * nostr: fix `LookupInvoiceParams` ([benthecarman])
-* ffi: fix equality operator (`==`) for some foreign language (python still need to use `a.__eq__(b)`) ([Yuki Kishimoto])
+* ffi: fix equality operator (`==`) ([Yuki Kishimoto])
 * js(nostr): fix `Keys` method calls in examples ([Xiao Yu])
 
 ### Removed
