@@ -76,6 +76,7 @@ removed zap split from `client.zap` method, many improvements and more!
 ### Fixed
 
 * nostr: fix NIP19 event (`nevent`) serialization ([Yuki Kishimoto])
+* nostr: fix re-serialization of events that contains unknown keys during deserialization ([Yuki Kishimoto])
 
 ### Removed
 
