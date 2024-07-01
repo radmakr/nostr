@@ -18,7 +18,10 @@ use serde_json::Value;
 use url::Url;
 
 use super::nip19::Nip19Profile;
-use crate::{key, PublicKey};
+use crate::{key, Profile, PublicKey};
+
+/// NIP-05 profile
+pub type Nip05Profile = Profile<Nip05>;
 
 /// `NIP05` error
 #[derive(Debug)]
@@ -68,13 +71,11 @@ impl From<key::Error> for Error {
     }
 }
 
-/// NIP-05 profile
+/// NIP-05 profile data
 ///
 /// <https://github.com/nostr-protocol/nips/blob/master/05.md>
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Nip05Profile {
-    /// Public key
-    pub public_key: PublicKey,
+pub struct Nip05 {
     /// Relays
     ///
     /// <https://github.com/nostr-protocol/nips/blob/master/05.md>
@@ -172,7 +173,7 @@ where
 /// **Proxy is ignored for WASM targets!**
 ///
 /// <https://github.com/nostr-protocol/nips/blob/master/05.md>
-pub async fn profile<S>(nip05: S, _proxy: Option<SocketAddr>) -> Result<Nip05Profile, Error>
+pub async fn profile<S>(nip05: S, _proxy: Option<SocketAddr>) -> Result<Profile<Nip05>, Error>
 where
     S: AsRef<str>,
 {
@@ -182,11 +183,9 @@ where
     let relays: Vec<Url> = get_relays_from_json(&json, public_key);
     let nip46: Vec<Url> = get_nip46_relays_from_json(&json, public_key);
 
-    Ok(Nip05Profile {
-        public_key,
-        relays,
-        nip46,
-    })
+    let data: Nip05 = Nip05 { relays, nip46 };
+
+    Ok(Profile::new(public_key, data))
 }
 
 /// Get NIP-05 profile
@@ -195,10 +194,10 @@ pub async fn get_profile<S>(nip05: S, _proxy: Option<SocketAddr>) -> Result<Nip1
 where
     S: AsRef<str>,
 {
-    let profile: Nip05Profile = profile(nip05, _proxy).await?;
+    let profile: Profile<Nip05> = profile(nip05, _proxy).await?;
     Ok(Nip19Profile {
-        public_key: profile.public_key,
-        relays: profile.relays,
+        public_key: profile.public_key(),
+        relays: profile.data.relays,
     })
 }
 

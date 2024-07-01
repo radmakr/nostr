@@ -546,7 +546,7 @@ impl ToBech32 for Nip05Profile {
     fn to_bech32(&self) -> Result<String, Self::Err> {
         // Convert to NIP19 profile
         let profile: Nip19Profile = Nip19Profile {
-            public_key: self.public_key,
+            public_key: self.public_key(),
             relays: self.relays.clone(),
         };
         // Encode
