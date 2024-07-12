@@ -64,6 +64,15 @@ pub enum RelayNotification {
         /// Relay Status
         status: RelayStatus,
     },
+    /// Error during event handling
+    HandleEventError {
+        /// Subscription ID
+        subscription_id: SubscriptionId,
+        /// Event ID
+        id: EventId,
+        /// Error
+        error: String,
+    },
     /// Shutdown
     Shutdown,
 }

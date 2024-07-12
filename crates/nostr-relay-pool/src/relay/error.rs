@@ -20,6 +20,9 @@ pub enum Error {
     /// Event error
     #[error(transparent)]
     Event(#[from] event::Error),
+    /// Event ID error
+    #[error(transparent)]
+    EventId(#[from] event::id::Error),
     /// Partial Event error
     #[error(transparent)]
     PartialEvent(#[from] event::partial::Error),
