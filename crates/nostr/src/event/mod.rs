@@ -217,7 +217,7 @@ impl Event {
     /// Get event author (`pubkey` field)
     #[deprecated(since = "0.35.0")]
     pub fn author(&self) -> PublicKey {
-        self.pubkey
+        self.pubkey.clone_partial()
     }
 
     /// Get [Timestamp] of when the event was created
@@ -327,8 +327,10 @@ impl Event {
         C: Verification,
     {
         let message: Message = Message::from_digest(self.id.to_bytes());
-        secp.verify_schnorr(&self.sig, &message, &self.pubkey)
-            .is_ok()
+        match self.pubkey.as_x_only() {
+            Ok(public_key) => secp.verify_schnorr(&self.sig, &message, public_key).is_ok(),
+            Err(..) => false, // TODO: return err?
+        }
     }
 
     /// Check POW
@@ -460,6 +462,21 @@ impl Event {
             Some(TagStandard::PublicKeyLiveEvent { public_key, .. }) => Some(public_key),
             _ => None,
         })
+    }
+
+    /// Extract public keys from tags (`p` tag)
+    ///
+    /// **This method extract ONLY `TagStandard::PublicKey`, `TagStandard::PublicKeyReport` and `TagStandard::PublicKeyLiveEvent` variants**
+    #[inline]
+    pub fn into_public_keys(self) -> impl Iterator<Item = PublicKey> {
+        self.tags
+            .into_iter()
+            .filter_map(|t| match t.to_standardized() {
+                Some(TagStandard::PublicKey { public_key, .. }) => Some(public_key),
+                Some(TagStandard::PublicKeyReport(public_key, ..)) => Some(public_key),
+                Some(TagStandard::PublicKeyLiveEvent { public_key, .. }) => Some(public_key),
+                _ => None,
+            })
     }
 
     /// Extract event IDs from tags (`e` tag)

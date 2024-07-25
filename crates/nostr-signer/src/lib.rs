@@ -165,7 +165,9 @@ impl NostrSigner {
             #[cfg(all(feature = "nip07", target_arch = "wasm32"))]
             Self::NIP07(signer) => Ok(signer.nip04_encrypt(public_key, content).await?),
             #[cfg(feature = "nip46")]
-            Self::NIP46(signer) => Ok(signer.nip04_encrypt(*public_key, content).await?),
+            Self::NIP46(signer) => Ok(signer
+                .nip04_encrypt(public_key.clone_partial(), content)
+                .await?),
         }
     }
 
@@ -189,7 +191,9 @@ impl NostrSigner {
             #[cfg(all(feature = "nip07", target_arch = "wasm32"))]
             Self::NIP07(signer) => Ok(signer.nip04_decrypt(public_key, encrypted_content).await?),
             #[cfg(feature = "nip46")]
-            Self::NIP46(signer) => Ok(signer.nip04_decrypt(*public_key, encrypted_content).await?),
+            Self::NIP46(signer) => Ok(signer
+                .nip04_decrypt(public_key.clone_partial(), encrypted_content)
+                .await?),
         }
     }
 
@@ -214,7 +218,9 @@ impl NostrSigner {
             #[cfg(all(feature = "nip07", target_arch = "wasm32"))]
             Self::NIP07(signer) => Ok(signer.nip44_encrypt(public_key, content).await?),
             #[cfg(feature = "nip46")]
-            Self::NIP46(signer) => Ok(signer.nip44_encrypt(*public_key, content).await?),
+            Self::NIP46(signer) => Ok(signer
+                .nip44_encrypt(public_key.clone_partial(), content)
+                .await?),
         }
     }
 
@@ -234,7 +240,9 @@ impl NostrSigner {
             #[cfg(all(feature = "nip07", target_arch = "wasm32"))]
             Self::NIP07(signer) => Ok(signer.nip44_decrypt(public_key, payload).await?),
             #[cfg(feature = "nip46")]
-            Self::NIP46(signer) => Ok(signer.nip44_decrypt(*public_key, payload).await?),
+            Self::NIP46(signer) => Ok(signer
+                .nip44_decrypt(public_key.clone_partial(), payload)
+                .await?),
         }
     }
 

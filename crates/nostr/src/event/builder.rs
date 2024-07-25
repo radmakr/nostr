@@ -463,9 +463,9 @@ impl EventBuilder {
                     event_id: root.id,
                     relay_url: relay_url.clone(),
                     marker: Some(Marker::Root),
-                    public_key: Some(root.pubkey),
+                    public_key: Some(root.pubkey.clone_partial()),
                 }));
-                tags.push(Tag::public_key(root.pubkey));
+                tags.push(Tag::public_key(root.pubkey.clone_partial()));
 
                 // Add others `p` tags
                 tags.extend(
@@ -487,7 +487,7 @@ impl EventBuilder {
                     event_id: reply_to.id,
                     relay_url: relay_url.clone(),
                     marker: Some(Marker::Root),
-                    public_key: Some(reply_to.pubkey),
+                    public_key: Some(reply_to.pubkey.clone_partial()),
                 }));
             }
         }
@@ -497,9 +497,9 @@ impl EventBuilder {
             event_id: reply_to.id,
             relay_url,
             marker: Some(Marker::Reply),
-            public_key: Some(reply_to.pubkey),
+            public_key: Some(reply_to.pubkey.clone_partial()),
         }));
-        tags.push(Tag::public_key(reply_to.pubkey));
+        tags.push(Tag::public_key(reply_to.pubkey.clone_partial()));
 
         // Add others `p` tags of reply_to event
         tags.extend(
@@ -602,9 +602,9 @@ impl EventBuilder {
                         event_id: event.id,
                         relay_url,
                         marker: None,
-                        public_key: Some(event.pubkey),
+                        public_key: Some(event.pubkey.clone()),
                     }),
-                    Tag::public_key(event.pubkey),
+                    Tag::public_key(event.pubkey.clone()),
                 ],
             )
         } else {
@@ -616,9 +616,9 @@ impl EventBuilder {
                         event_id: event.id,
                         relay_url,
                         marker: None,
-                        public_key: Some(event.pubkey),
+                        public_key: Some(event.pubkey.clone()),
                     }),
-                    Tag::public_key(event.pubkey),
+                    Tag::public_key(event.pubkey.clone()),
                     Tag::from_standardized_without_cell(TagStandard::Kind(event.kind)),
                 ],
             )
@@ -661,7 +661,7 @@ impl EventBuilder {
     where
         S: Into<String>,
     {
-        Self::reaction_extended(event.id, event.pubkey, Some(event.kind), reaction)
+        Self::reaction_extended(event.id, event.pubkey.clone(), Some(event.kind), reaction)
     }
 
     /// Add reaction (like/upvote, dislike/downvote or emoji) to an event
@@ -966,7 +966,7 @@ impl EventBuilder {
         // add P tag
         tags.push(Tag::from_standardized_without_cell(
             TagStandard::PublicKey {
-                public_key: zap_request.pubkey,
+                public_key: zap_request.pubkey.clone(),
                 relay_url: None,
                 alias: None,
                 uppercase: true,
@@ -1072,7 +1072,7 @@ impl EventBuilder {
         // Add identity tag
         tags.push(Tag::from_standardized_without_cell(
             TagStandard::Coordinate {
-                coordinate: Coordinate::new(Kind::BadgeDefinition, badge_definition.pubkey)
+                coordinate: Coordinate::new(Kind::BadgeDefinition, badge_definition.pubkey.clone())
                     .identifier(badge_id),
                 relay_url: None,
             },
@@ -1223,7 +1223,7 @@ impl EventBuilder {
 
         tags.extend_from_slice(&[
             Tag::event(job_request.id),
-            Tag::public_key(job_request.pubkey),
+            Tag::public_key(job_request.pubkey.clone()),
             Tag::from_standardized_without_cell(TagStandard::Request(job_request)),
             Tag::from_standardized_without_cell(TagStandard::Amount { millisats, bolt11 }),
         ]);
@@ -1347,7 +1347,7 @@ impl EventBuilder {
         )?;
 
         let mut tags: Vec<Tag> = Vec::with_capacity(1 + usize::from(expiration.is_some()));
-        tags.push(Tag::public_key(*receiver));
+        tags.push(Tag::public_key(receiver.clone()));
 
         if let Some(timestamp) = expiration {
             tags.push(Tag::expiration(timestamp));
@@ -1819,7 +1819,7 @@ mod tests {
         let badge_one_pubkey = badge_one_keys.public_key();
 
         let awarded_pubkeys = vec![
-            pub_key,
+            pub_key.clone(),
             PublicKey::from_str("232a4ba3df82ccc252a35abee7d87d1af8fc3cc749e4002c3691434da692b1df")
                 .unwrap(),
         ];

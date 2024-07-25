@@ -108,7 +108,7 @@ impl From<Filter> for QueryPattern {
         let (authors_len, first_author): (usize, Option<PublicKey>) = filter
             .authors
             .as_ref()
-            .map(|set| (set.len(), set.iter().next().copied()))
+            .map(|set| (set.len(), set.iter().next().cloned()))
             .unwrap_or_default();
         let ids_len: usize = filter.ids.as_ref().map(|set| set.len()).unwrap_or_default();
         let generic_tags_len: usize = filter.generic_tags.len();
@@ -240,14 +240,14 @@ impl InternalDatabaseHelper {
         let mut to_discard: HashSet<EventId> = HashSet::new();
 
         // Compose others fields
-        let author: PublicKey = event.pubkey;
         let created_at: Timestamp = event.created_at;
         let kind: Kind = event.kind;
 
         let mut should_insert: bool = true;
 
         if kind.is_replaceable() {
-            let params: QueryByKindAndAuthorParams = QueryByKindAndAuthorParams::new(kind, author);
+            let params: QueryByKindAndAuthorParams =
+                QueryByKindAndAuthorParams::new(kind, event.pubkey.clone_partial());
             for ev in self.internal_query_by_kind_and_author(params) {
                 if ev.created_at > created_at || ev.id == event.id {
                     should_insert = false;
@@ -259,14 +259,17 @@ impl InternalDatabaseHelper {
             match event.identifier() {
                 Some(identifier) => {
                     let coordinate: Coordinate =
-                        Coordinate::new(kind, author).identifier(identifier);
+                        Coordinate::new(kind, event.pubkey.clone_partial()).identifier(identifier);
 
                     // Check if coordinate was deleted
                     if self.has_coordinate_been_deleted(&coordinate, now) {
                         should_insert = false;
                     } else {
-                        let params: QueryByParamReplaceable =
-                            QueryByParamReplaceable::new(kind, author, identifier.to_string());
+                        let params: QueryByParamReplaceable = QueryByParamReplaceable::new(
+                            kind,
+                            event.pubkey.clone_partial(),
+                            identifier.to_string(),
+                        );
                         if let Some(ev) = self.internal_query_param_replaceable(params) {
                             if ev.created_at > created_at || ev.id == event.id {
                                 should_insert = false;
@@ -282,7 +285,7 @@ impl InternalDatabaseHelper {
             // Check `e` tags
             for id in event.event_ids() {
                 if let Some(ev) = self.ids.get(id) {
-                    if ev.pubkey == author && ev.created_at <= created_at {
+                    if ev.pubkey == event.pubkey && ev.created_at <= created_at {
                         to_discard.insert(ev.id);
                     }
                 }
@@ -290,7 +293,7 @@ impl InternalDatabaseHelper {
 
             // Check `a` tags
             for coordinate in event.coordinates() {
-                if coordinate.public_key == author {
+                if coordinate.public_key == event.pubkey {
                     // Save deleted coordinate at certain timestamp
                     self.deleted_coordinates
                         .entry(coordinate.clone())
@@ -307,7 +310,7 @@ impl InternalDatabaseHelper {
                     if !coordinate.identifier.is_empty() {
                         let mut params: QueryByParamReplaceable = QueryByParamReplaceable::new(
                             coordinate.kind,
-                            coordinate.public_key,
+                            coordinate.public_key.clone_partial(),
                             coordinate.identifier.clone(),
                         );
                         params.until = Some(created_at);
@@ -316,7 +319,10 @@ impl InternalDatabaseHelper {
                         }
                     } else {
                         let mut params: QueryByKindAndAuthorParams =
-                            QueryByKindAndAuthorParams::new(coordinate.kind, coordinate.public_key);
+                            QueryByKindAndAuthorParams::new(
+                                coordinate.kind,
+                                coordinate.public_key.clone_partial(),
+                            );
                         params.until = Some(created_at);
                         to_discard
                             .extend(self.internal_query_by_kind_and_author(params).map(|e| e.id));
@@ -339,24 +345,27 @@ impl InternalDatabaseHelper {
             if inserted {
                 self.ids.insert(e.id, e.clone());
                 self.author_index
-                    .entry(author)
+                    .entry(event.pubkey.clone_partial())
                     .or_default()
                     .insert(e.clone());
 
                 if kind.is_parameterized_replaceable() {
                     if let Some(identifier) = e.identifier() {
-                        self.param_replaceable_index
-                            .insert((kind, author, identifier.to_string()), e.clone());
+                        self.param_replaceable_index.insert(
+                            (kind, event.pubkey.clone_partial(), identifier.to_string()),
+                            e.clone(),
+                        );
                     }
                 }
 
                 if kind.is_replaceable() {
                     let mut set = BTreeSet::new();
                     set.insert(e);
-                    self.kind_author_index.insert((kind, author), set);
+                    self.kind_author_index
+                        .insert((kind, event.pubkey.clone_partial()), set);
                 } else {
                     self.kind_author_index
-                        .entry((kind, author))
+                        .entry((kind, event.pubkey.clone_partial()))
                         .or_default()
                         .insert(e);
                 }
@@ -390,13 +399,16 @@ impl InternalDatabaseHelper {
                         if let Some(identifier) = ev.identifier() {
                             self.param_replaceable_index.remove(&(
                                 ev.kind,
-                                ev.pubkey,
+                                ev.pubkey.clone_partial(),
                                 identifier.to_string(),
                             ));
                         }
                     }
 
-                    if let Some(set) = self.kind_author_index.get_mut(&(ev.kind, ev.pubkey)) {
+                    if let Some(set) = self
+                        .kind_author_index
+                        .get_mut(&(ev.kind, ev.pubkey.clone_partial()))
+                    {
                         set.remove(&ev);
                     }
                 }
@@ -414,12 +426,18 @@ impl InternalDatabaseHelper {
 
         if ev.kind.is_parameterized_replaceable() {
             if let Some(identifier) = ev.identifier() {
-                self.param_replaceable_index
-                    .remove(&(ev.kind, ev.pubkey, identifier.to_string()));
+                self.param_replaceable_index.remove(&(
+                    ev.kind,
+                    ev.pubkey.clone_partial(),
+                    identifier.to_string(),
+                ));
             }
         }
 
-        if let Some(set) = self.kind_author_index.get_mut(&(ev.kind, ev.pubkey)) {
+        if let Some(set) = self
+            .kind_author_index
+            .get_mut(&(ev.kind, ev.pubkey.clone_partial()))
+        {
             set.remove(&ev);
         }
     }

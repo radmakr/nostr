@@ -28,20 +28,23 @@ pub mod vanity;
 
 pub use self::public_key::PublicKey;
 pub use self::secret_key::SecretKey;
+use crate::util::hex;
 #[cfg(feature = "std")]
 use crate::SECP256K1;
 
 /// [`Keys`] error
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
+    /// Secp256k1 error
+    Secp256k1(secp256k1::Error),
+    /// Hex error
+    Hex(hex::Error),
     /// Invalid secret key
     InvalidSecretKey,
     /// Invalid public key
     InvalidPublicKey,
     /// Unsupported char
     InvalidChar(char),
-    /// Secp256k1 error
-    Secp256k1(secp256k1::Error),
 }
 
 #[cfg(feature = "std")]
@@ -50,10 +53,11 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Secp256k1(e) => write!(f, "Secp256k1: {e}"),
+            Self::Hex(e) => write!(f, "Hex: {e}"),
             Self::InvalidSecretKey => write!(f, "Invalid secret key"),
             Self::InvalidPublicKey => write!(f, "Invalid public key"),
             Self::InvalidChar(c) => write!(f, "Unsupported char: {c}"),
-            Self::Secp256k1(e) => write!(f, "Secp256k1: {e}"),
         }
     }
 }
@@ -61,6 +65,12 @@ impl fmt::Display for Error {
 impl From<secp256k1::Error> for Error {
     fn from(e: secp256k1::Error) -> Self {
         Self::Secp256k1(e)
+    }
+}
+
+impl From<hex::Error> for Error {
+    fn from(e: hex::Error) -> Self {
+        Self::Hex(e)
     }
 }
 
@@ -223,10 +233,10 @@ impl Keys {
         Self::generate_with_rng(rng)
     }
 
-    /// Get public key
+    /// Get a **clone** of the public key
     #[inline]
     pub fn public_key(&self) -> PublicKey {
-        self.public_key
+        self.public_key.clone()
     }
 
     /// Get public key

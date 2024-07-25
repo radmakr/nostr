@@ -88,7 +88,7 @@ impl JobFeedbackData {
     pub fn new(job_request: &Event, status: DataVendingMachineStatus) -> Self {
         Self {
             job_request_id: job_request.id,
-            customer_public_key: job_request.pubkey,
+            customer_public_key: job_request.pubkey.clone_partial(),
             status,
             extra_info: None,
             amount_msat: None,

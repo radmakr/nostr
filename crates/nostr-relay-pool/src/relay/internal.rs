@@ -955,7 +955,7 @@ impl InternalRelay {
                 // Check if event is replaceable and has coordinate
                 if missing.kind.is_replaceable() || missing.kind.is_parameterized_replaceable() {
                     let coordinate: Coordinate =
-                        Coordinate::new(missing.kind, partial_event.pubkey)
+                        Coordinate::new(missing.kind, partial_event.pubkey.clone())
                             .identifier(missing.identifier().unwrap_or_default());
 
                     // Check if coordinate has been deleted
