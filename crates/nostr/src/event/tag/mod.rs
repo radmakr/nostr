@@ -37,7 +37,7 @@ use crate::{ImageDimensions, PublicKey, SingleLetterTag, Timestamp, UncheckedUrl
 #[derive(Clone)]
 pub struct Tag {
     buf: Vec<String>,
-    standardized: OnceCell<Option<TagStandard>>,
+    standardized: OnceCell<Option<TagStandard<'static>>>,
 }
 
 impl fmt::Debug for Tag {
@@ -74,7 +74,7 @@ impl Hash for Tag {
 
 impl Tag {
     #[inline]
-    fn new(buf: Vec<String>, standardized: Option<TagStandard>) -> Self {
+    fn new(buf: Vec<String>, standardized: Option<TagStandard<'static>>) -> Self {
         Self {
             buf,
             standardized: OnceCell::from(standardized),
@@ -109,7 +109,7 @@ impl Tag {
 
     /// Construct from standardized tag
     #[inline]
-    pub fn from_standardized(standardized: TagStandard) -> Self {
+    pub fn from_standardized(standardized: TagStandard<'static>) -> Self {
         Self::new(standardized.clone().to_vec(), Some(standardized))
     }
 
@@ -151,7 +151,7 @@ impl Tag {
     }
 
     /// Consume tag and get standardized tag
-    pub fn to_standardized(self) -> Option<TagStandard> {
+    pub fn to_standardized(self) -> Option<TagStandard<'static>> {
         match self.standardized.into_inner() {
             Some(inner) => inner,
             None => TagStandard::parse(&self.buf).ok(),
@@ -188,7 +188,7 @@ impl Tag {
     ///
     /// <https://github.com/nostr-protocol/nips/blob/master/01.md>
     #[inline]
-    pub fn public_key(public_key: PublicKey) -> Self {
+    pub fn public_key(public_key: &PublicKey) -> Self {
         Self::from_standardized_without_cell(TagStandard::public_key(public_key))
     }
 
@@ -196,11 +196,11 @@ impl Tag {
     ///
     /// <https://github.com/nostr-protocol/nips/blob/master/01.md>
     #[inline]
-    pub fn identifier<T>(identifier: T) -> Self
+    pub fn identifier<'a, T>(identifier: T) -> Self
     where
-        T: Into<String>,
+        T: AsRef<str> + 'a,
     {
-        Self::from_standardized_without_cell(TagStandard::Identifier(identifier.into()))
+        Self::from_standardized_without_cell(TagStandard::identifier(identifier.as_ref()))
     }
 
     /// Compose `["a", "<coordinate>"]` tag
@@ -385,9 +385,9 @@ impl<'de> Deserialize<'de> for Tag {
     }
 }
 
-impl From<TagStandard> for Tag {
+impl<'a> From<TagStandard<'a>> for Tag {
     #[inline(always)]
-    fn from(standard: TagStandard) -> Self {
+    fn from(standard: TagStandard<'a>) -> Self {
         Self::from_standardized_without_cell(standard)
     }
 }
@@ -410,14 +410,11 @@ mod tests {
         let tag: Tag = Tag::parse(&["d", "bravery"]).unwrap();
         assert_eq!(
             tag.as_standardized(),
-            Some(&TagStandard::Identifier(String::from("bravery")))
+            Some(&TagStandard::identifier("bravery"))
         );
 
         let tag: Tag = Tag::parse(&["d", "test"]).unwrap();
-        assert_eq!(
-            tag.to_standardized(),
-            Some(TagStandard::Identifier(String::from("test")))
-        );
+        assert_eq!(tag.to_standardized(), Some(TagStandard::identifier("test")));
     }
 
     #[test]
@@ -486,7 +483,7 @@ mod tests {
         assert_eq!(
             tag,
             &Tag::public_key(
-                PublicKey::from_hex(
+                &PublicKey::from_hex(
                     "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
                 )
                 .unwrap()
@@ -505,7 +502,7 @@ mod tests {
             PublicKey::from_hex("79dff8f82963424e0bb02708a22e44b4980893e3a4be0fa3cb60a43b946764e3").unwrap(),
             Timestamp::from(1671739153),
             Kind::EncryptedDirectMessage,
-            [Tag::public_key(public_key)],
+            [Tag::public_key(&public_key)],
             "8y4MRYrb4ztvXO2NmsHvUA==?iv=MplZo7oSdPfH/vdMC8Hmwg==",
             Signature::from_str("fd0954de564cae9923c2d8ee9ab2bf35bc19757f8e328a978958a2fcc950eaba0754148a203adec29b7b64080d0cf5a32bebedd768ea6eb421a6b751bb4584a8").unwrap()
         );
@@ -536,7 +533,7 @@ mod tests {
                 "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
             ],
             Tag::public_key(
-                PublicKey::from_str(
+                &PublicKey::from_str(
                     "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
                 )
                 .unwrap()
@@ -593,10 +590,12 @@ mod tests {
                 "wss://relay.damus.io"
             ],
             Tag::from_standardized_without_cell(TagStandard::PublicKey {
-                public_key: PublicKey::from_str(
-                    "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
-                )
-                .unwrap(),
+                public_key: Cow::Owned(
+                    PublicKey::from_str(
+                        "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
+                    )
+                    .unwrap()
+                ),
                 relay_url: Some(UncheckedUrl::from("wss://relay.damus.io")),
                 alias: None,
                 uppercase: false,
@@ -758,10 +757,12 @@ mod tests {
                 "alias",
             ],
             Tag::from_standardized_without_cell(TagStandard::PublicKey {
-                public_key: PublicKey::from_str(
-                    "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
-                )
-                .unwrap(),
+                public_key: Cow::Owned(
+                    PublicKey::from_str(
+                        "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
+                    )
+                    .unwrap()
+                ),
                 relay_url: Some(UncheckedUrl::from("wss://relay.damus.io")),
                 alias: Some(String::from("alias")),
                 uppercase: false,
@@ -943,7 +944,7 @@ mod tests {
             ])
             .unwrap(),
             Tag::public_key(
-                PublicKey::from_str(
+                &PublicKey::from_str(
                     "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
                 )
                 .unwrap()
@@ -1019,10 +1020,12 @@ mod tests {
             ])
             .unwrap(),
             Tag::from_standardized_without_cell(TagStandard::PublicKey {
-                public_key: PublicKey::from_str(
-                    "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
-                )
-                .unwrap(),
+                public_key: Cow::Owned(
+                    PublicKey::from_str(
+                        "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
+                    )
+                    .unwrap()
+                ),
                 relay_url: Some(UncheckedUrl::from("wss://relay.damus.io")),
                 alias: None,
                 uppercase: false
@@ -1213,10 +1216,12 @@ mod tests {
             ])
             .unwrap(),
             Tag::from_standardized_without_cell(TagStandard::PublicKey {
-                public_key: PublicKey::from_str(
-                    "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
-                )
-                .unwrap(),
+                public_key: Cow::Owned(
+                    PublicKey::from_str(
+                        "13adc511de7e1cfcf1c6b7f6365fb5a03442d7bcacf565ea57fa7770912c023d"
+                    )
+                    .unwrap()
+                ),
                 relay_url: Some(UncheckedUrl::from("wss://relay.damus.io")),
                 alias: Some(String::from("alias")),
                 uppercase: false,

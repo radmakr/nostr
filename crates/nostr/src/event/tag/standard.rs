@@ -4,6 +4,7 @@
 
 //! Standardized tags
 
+use alloc::borrow::Cow;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::str::FromStr;
@@ -32,7 +33,7 @@ use crate::{
 /// Standardized tag
 #[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TagStandard {
+pub enum TagStandard<'a> {
     /// Event
     ///
     /// <https://github.com/nostr-protocol/nips/blob/master/01.md> and <https://github.com/nostr-protocol/nips/blob/master/10.md>
@@ -51,7 +52,7 @@ pub enum TagStandard {
     ///
     /// <https://github.com/nostr-protocol/nips/blob/master/01.md>
     PublicKey {
-        public_key: PublicKey,
+        public_key: Cow<'a, PublicKey>,
         relay_url: Option<UncheckedUrl>,
         alias: Option<String>,
         /// Whether the p tag is an uppercase P or not
@@ -77,7 +78,7 @@ pub enum TagStandard {
     },
     Hashtag(String),
     Geohash(String),
-    Identifier(String),
+    Identifier(Cow<'a, str>),
     ExternalIdentity(Identity),
     Coordinate {
         coordinate: Coordinate,
@@ -177,7 +178,7 @@ pub enum TagStandard {
     Alt(String),
 }
 
-impl TagStandard {
+impl<'a> TagStandard<'a> {
     /// Parse tag from slice of string
     #[inline]
     pub fn parse<S>(tag: &[S]) -> Result<Self, Error>
@@ -284,7 +285,7 @@ impl TagStandard {
                 TagKind::SingleLetter(SingleLetterTag {
                     character: Alphabet::D,
                     uppercase: false,
-                }) => Ok(Self::Identifier(tag_1.to_string())),
+                }) => Ok(Self::Identifier(Cow::Owned(tag_1.to_string()))),
                 TagKind::SingleLetter(SingleLetterTag {
                     character: Alphabet::K,
                     uppercase: false,
@@ -428,13 +429,19 @@ impl TagStandard {
     ///
     /// JSON: `["p", "<public-key>"]`
     #[inline]
-    pub fn public_key(public_key: PublicKey) -> Self {
+    pub fn public_key(public_key: &'a PublicKey) -> Self {
         Self::PublicKey {
-            public_key,
+            public_key: Cow::Borrowed(public_key),
             relay_url: None,
             alias: None,
             uppercase: false,
         }
+    }
+
+    /// Compose `["d", "<identifier>"]` tag
+    #[inline]
+    pub fn identifier(identifier: &'a str) -> Self {
+        Self::Identifier(Cow::Borrowed(identifier))
     }
 
     /// Check if tag is an event `reply`
@@ -568,8 +575,8 @@ impl TagStandard {
     }
 }
 
-impl From<TagStandard> for Vec<String> {
-    fn from(tag: TagStandard) -> Self {
+impl<'a> From<TagStandard<'a>> for Vec<String> {
+    fn from(tag: TagStandard<'a>) -> Self {
         let tag_kind: String = tag.kind().to_string();
 
         match tag {
@@ -645,7 +652,7 @@ impl From<TagStandard> for Vec<String> {
             }
             TagStandard::Hashtag(t) => vec![tag_kind, t],
             TagStandard::Geohash(g) => vec![tag_kind, g],
-            TagStandard::Identifier(d) => vec![tag_kind, d],
+            TagStandard::Identifier(d) => vec![tag_kind, d.into_owned()],
             TagStandard::Coordinate {
                 coordinate,
                 relay_url,
@@ -797,7 +804,7 @@ impl From<TagStandard> for Vec<String> {
     }
 }
 
-fn parse_a_tag<S>(tag: &[S]) -> Result<TagStandard, Error>
+fn parse_a_tag<'a, S>(tag: &[S]) -> Result<TagStandard<'a>, Error>
 where
     S: AsRef<str>,
 {
@@ -816,7 +823,7 @@ where
     }
 }
 
-fn parse_e_tag<S>(tag: &[S]) -> Result<TagStandard, Error>
+fn parse_e_tag<'a, S>(tag: &[S]) -> Result<TagStandard<'a>, Error>
 where
     S: AsRef<str>,
 {
@@ -849,7 +856,7 @@ where
     }
 }
 
-fn parse_p_tag<S>(tag: &[S], uppercase: bool) -> Result<TagStandard, Error>
+fn parse_p_tag<'a, S>(tag: &[S], uppercase: bool) -> Result<TagStandard<'a>, Error>
 where
     S: AsRef<str>,
 {
@@ -884,7 +891,7 @@ where
                     proof: None,
                 }),
                 Err(_) => Ok(TagStandard::PublicKey {
-                    public_key,
+                    public_key: Cow::Owned(public_key),
                     relay_url,
                     alias: (!tag_3.is_empty()).then_some(tag_3.to_string()),
                     uppercase,
@@ -897,7 +904,7 @@ where
 
             return if tag_2.is_empty() {
                 Ok(TagStandard::PublicKey {
-                    public_key,
+                    public_key: Cow::Owned(public_key),
                     relay_url: None,
                     alias: None,
                     uppercase,
@@ -906,7 +913,7 @@ where
                 match Report::from_str(tag_2) {
                     Ok(report) => Ok(TagStandard::PublicKeyReport(public_key, report)),
                     Err(_) => Ok(TagStandard::PublicKey {
-                        public_key,
+                        public_key: Cow::Owned(public_key),
                         relay_url: Some(UncheckedUrl::from(tag_2)),
                         alias: None,
                         uppercase,
@@ -916,7 +923,7 @@ where
         }
 
         Ok(TagStandard::PublicKey {
-            public_key,
+            public_key: Cow::Owned(public_key),
             relay_url: None,
             alias: None,
             uppercase,
@@ -926,7 +933,7 @@ where
     }
 }
 
-fn parse_delegation_tag<S>(tag: &[S]) -> Result<TagStandard, Error>
+fn parse_delegation_tag<'a, S>(tag: &[S]) -> Result<TagStandard<'a>, Error>
 where
     S: AsRef<str>,
 {

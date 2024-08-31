@@ -102,10 +102,10 @@ impl Identity {
     }
 }
 
-impl TryFrom<TagStandard> for Identity {
+impl<'a> TryFrom<TagStandard<'a>> for Identity {
     type Error = Error;
 
-    fn try_from(value: TagStandard) -> Result<Self, Self::Error> {
+    fn try_from(value: TagStandard<'a>) -> Result<Self, Self::Error> {
         match value {
             TagStandard::ExternalIdentity(iden) => Ok(iden),
             _ => Err(Error::InvalidIdentity),
@@ -113,7 +113,7 @@ impl TryFrom<TagStandard> for Identity {
     }
 }
 
-impl From<Identity> for TagStandard {
+impl<'a> From<Identity> for TagStandard<'a> {
     fn from(value: Identity) -> Self {
         Self::ExternalIdentity(value)
     }

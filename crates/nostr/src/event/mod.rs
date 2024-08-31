@@ -457,7 +457,7 @@ impl Event {
     #[inline]
     pub fn public_keys(&self) -> impl Iterator<Item = &PublicKey> {
         self.tags.iter().filter_map(|t| match t.as_standardized() {
-            Some(TagStandard::PublicKey { public_key, .. }) => Some(public_key),
+            Some(TagStandard::PublicKey { public_key, .. }) => Some(public_key.as_ref()),
             Some(TagStandard::PublicKeyReport(public_key, ..)) => Some(public_key),
             Some(TagStandard::PublicKeyLiveEvent { public_key, .. }) => Some(public_key),
             _ => None,
@@ -472,7 +472,7 @@ impl Event {
         self.tags
             .into_iter()
             .filter_map(|t| match t.to_standardized() {
-                Some(TagStandard::PublicKey { public_key, .. }) => Some(public_key),
+                Some(TagStandard::PublicKey { public_key, .. }) => Some(public_key.into_owned()),
                 Some(TagStandard::PublicKeyReport(public_key, ..)) => Some(public_key),
                 Some(TagStandard::PublicKeyLiveEvent { public_key, .. }) => Some(public_key),
                 _ => None,

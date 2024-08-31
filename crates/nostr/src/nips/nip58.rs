@@ -63,7 +63,7 @@ pub(crate) fn extract_awarded_public_key<'a>(
             public_key,
             relay_url,
             ..
-        }) if public_key == awarded_public_key => Some((public_key, relay_url)),
+        }) if public_key.as_ref() == awarded_public_key => Some((public_key.as_ref(), relay_url)),
         _ => None,
     })
 }

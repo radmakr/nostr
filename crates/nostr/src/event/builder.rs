@@ -4,6 +4,7 @@
 
 //! Event builder
 
+use alloc::borrow::Cow;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -465,7 +466,7 @@ impl EventBuilder {
                     marker: Some(Marker::Root),
                     public_key: Some(root.pubkey.clone_partial()),
                 }));
-                tags.push(Tag::public_key(root.pubkey.clone_partial()));
+                tags.push(Tag::public_key(&root.pubkey));
 
                 // Add others `p` tags
                 tags.extend(
@@ -499,7 +500,7 @@ impl EventBuilder {
             marker: Some(Marker::Reply),
             public_key: Some(reply_to.pubkey.clone_partial()),
         }));
-        tags.push(Tag::public_key(reply_to.pubkey.clone_partial()));
+        tags.push(Tag::public_key(&reply_to.pubkey));
 
         // Add others `p` tags of reply_to event
         tags.extend(
@@ -559,7 +560,7 @@ impl EventBuilder {
     {
         let tags = contacts.into_iter().map(|contact| {
             Tag::from_standardized_without_cell(TagStandard::PublicKey {
-                public_key: contact.public_key,
+                public_key: Cow::Owned(contact.public_key),
                 relay_url: contact.relay_url,
                 alias: contact.alias,
                 uppercase: false,
@@ -604,7 +605,7 @@ impl EventBuilder {
                         marker: None,
                         public_key: Some(event.pubkey.clone()),
                     }),
-                    Tag::public_key(event.pubkey.clone()),
+                    Tag::public_key(&event.pubkey),
                 ],
             )
         } else {
@@ -618,7 +619,7 @@ impl EventBuilder {
                         marker: None,
                         public_key: Some(event.pubkey.clone()),
                     }),
-                    Tag::public_key(event.pubkey.clone()),
+                    Tag::public_key(&event.pubkey),
                     Tag::from_standardized_without_cell(TagStandard::Kind(event.kind)),
                 ],
             )
@@ -661,7 +662,7 @@ impl EventBuilder {
     where
         S: Into<String>,
     {
-        Self::reaction_extended(event.id, event.pubkey.clone(), Some(event.kind), reaction)
+        Self::reaction_extended(event.id, &event.pubkey, Some(event.kind), reaction)
     }
 
     /// Add reaction (like/upvote, dislike/downvote or emoji) to an event
@@ -669,7 +670,7 @@ impl EventBuilder {
     /// <https://github.com/nostr-protocol/nips/blob/master/25.md>
     pub fn reaction_extended<S>(
         event_id: EventId,
-        public_key: PublicKey,
+        public_key: &PublicKey,
         kind: Option<Kind>,
         reaction: S,
     ) -> Self
@@ -761,7 +762,7 @@ impl EventBuilder {
     /// Mute channel user
     ///
     /// <https://github.com/nostr-protocol/nips/blob/master/28.md>
-    pub fn mute_channel_user<S>(public_key: PublicKey, reason: Option<S>) -> Self
+    pub fn mute_channel_user<S>(public_key: &PublicKey, reason: Option<S>) -> Self
     where
         S: Into<String>,
     {
@@ -801,12 +802,12 @@ impl EventBuilder {
     #[cfg(all(feature = "std", feature = "nip04", feature = "nip46"))]
     pub fn nostr_connect(
         sender_keys: &Keys,
-        receiver_pubkey: PublicKey,
+        receiver_pubkey: &PublicKey,
         msg: NostrConnectMessage,
     ) -> Result<Self, Error> {
         Ok(Self::new(
             Kind::NostrConnect,
-            nip04::encrypt(sender_keys.secret_key(), &receiver_pubkey, msg.as_json())?,
+            nip04::encrypt(sender_keys.secret_key(), receiver_pubkey, msg.as_json())?,
             [Tag::public_key(receiver_pubkey)],
         ))
     }
@@ -966,7 +967,7 @@ impl EventBuilder {
         // add P tag
         tags.push(Tag::from_standardized_without_cell(
             TagStandard::PublicKey {
-                public_key: zap_request.pubkey.clone(),
+                public_key: Cow::Borrowed(&zap_request.pubkey),
                 relay_url: None,
                 alias: None,
                 uppercase: true,
@@ -1072,14 +1073,17 @@ impl EventBuilder {
         // Add identity tag
         tags.push(Tag::from_standardized_without_cell(
             TagStandard::Coordinate {
-                coordinate: Coordinate::new(Kind::BadgeDefinition, badge_definition.pubkey.clone())
-                    .identifier(badge_id),
+                coordinate: Coordinate::new(
+                    Kind::BadgeDefinition,
+                    badge_definition.pubkey.clone_partial(),
+                )
+                .identifier(badge_id.as_ref()),
                 relay_url: None,
             },
         ));
 
         // Add awarded public keys
-        tags.extend(awarded_public_keys.into_iter().map(Tag::public_key));
+        tags.extend(awarded_public_keys.into_iter().map(|p| Tag::public_key(&p)));
 
         // Build event
         Ok(Self::new(Kind::BadgeAward, "", tags))
@@ -1104,7 +1108,9 @@ impl EventBuilder {
 
         for award in badge_awards.iter() {
             if !award.tags.iter().any(|t| match t.as_standardized() {
-                Some(TagStandard::PublicKey { public_key, .. }) => public_key == pubkey_awarded,
+                Some(TagStandard::PublicKey { public_key, .. }) => {
+                    public_key.as_ref() == pubkey_awarded
+                }
                 _ => false,
             }) {
                 return Err(Error::NIP58(nip58::Error::BadgeAwardsLackAwardedPublicKey));
@@ -1223,7 +1229,7 @@ impl EventBuilder {
 
         tags.extend_from_slice(&[
             Tag::event(job_request.id),
-            Tag::public_key(job_request.pubkey.clone()),
+            Tag::public_key(&job_request.pubkey),
             Tag::from_standardized_without_cell(TagStandard::Request(job_request)),
             Tag::from_standardized_without_cell(TagStandard::Amount { millisats, bolt11 }),
         ]);
@@ -1238,7 +1244,7 @@ impl EventBuilder {
         let mut tags: Vec<Tag> = Vec::with_capacity(3);
 
         tags.push(Tag::event(data.job_request_id));
-        tags.push(Tag::public_key(data.customer_public_key));
+        tags.push(Tag::public_key(&data.customer_public_key));
         tags.push(Tag::from_standardized_without_cell(
             TagStandard::DataVendingMachineStatus {
                 status: data.status,
@@ -1347,7 +1353,7 @@ impl EventBuilder {
         )?;
 
         let mut tags: Vec<Tag> = Vec::with_capacity(1 + usize::from(expiration.is_some()));
-        tags.push(Tag::public_key(receiver.clone()));
+        tags.push(Tag::public_key(receiver));
 
         if let Some(timestamp) = expiration {
             tags.push(Tag::expiration(timestamp));
@@ -1383,7 +1389,7 @@ impl EventBuilder {
     /// <https://github.com/nostr-protocol/nips/blob/master/17.md>
     #[inline]
     #[cfg(feature = "nip59")]
-    pub fn private_msg_rumor<S>(receiver: PublicKey, message: S, reply_to: Option<EventId>) -> Self
+    pub fn private_msg_rumor<S>(receiver: &PublicKey, message: S, reply_to: Option<EventId>) -> Self
     where
         S: Into<String>,
     {
@@ -1509,7 +1515,7 @@ impl EventBuilder {
     /// <https://github.com/nostr-protocol/nips/blob/master/51.md>
     pub fn follow_set<ID, I>(identifier: ID, public_keys: I) -> Self
     where
-        ID: Into<String>,
+        ID: AsRef<str>,
         I: IntoIterator<Item = PublicKey>,
     {
         let tags: Vec<Tag> = vec![Tag::identifier(identifier)];
@@ -1517,7 +1523,7 @@ impl EventBuilder {
             Kind::FollowSet,
             "",
             tags.into_iter()
-                .chain(public_keys.into_iter().map(Tag::public_key)),
+                .chain(public_keys.into_iter().map(|p| Tag::public_key(&p))),
         )
     }
 
@@ -1526,7 +1532,7 @@ impl EventBuilder {
     /// <https://github.com/nostr-protocol/nips/blob/master/51.md>
     pub fn relay_set<ID, I>(identifier: ID, relays: I) -> Self
     where
-        ID: Into<String>,
+        ID: AsRef<str>,
         I: IntoIterator<Item = UncheckedUrl>,
     {
         let tags: Vec<Tag> = vec![Tag::identifier(identifier)];
@@ -1546,7 +1552,7 @@ impl EventBuilder {
     /// <https://github.com/nostr-protocol/nips/blob/master/51.md>
     pub fn bookmarks_set<ID>(identifier: ID, list: Bookmarks) -> Self
     where
-        ID: Into<String>,
+        ID: AsRef<str>,
     {
         let mut tags: Vec<Tag> = list.into();
         tags.push(Tag::identifier(identifier));
@@ -1558,7 +1564,7 @@ impl EventBuilder {
     /// <https://github.com/nostr-protocol/nips/blob/master/51.md>
     pub fn articles_curation_set<ID>(identifier: ID, list: ArticlesCuration) -> Self
     where
-        ID: Into<String>,
+        ID: AsRef<str>,
     {
         let mut tags: Vec<Tag> = list.into();
         tags.push(Tag::identifier(identifier));
@@ -1570,7 +1576,7 @@ impl EventBuilder {
     /// <https://github.com/nostr-protocol/nips/blob/master/51.md>
     pub fn videos_curation_set<ID, I>(identifier: ID, video: I) -> Self
     where
-        ID: Into<String>,
+        ID: AsRef<str>,
         I: IntoIterator<Item = Coordinate>,
     {
         let tags: Vec<Tag> = vec![Tag::identifier(identifier)];
@@ -1587,7 +1593,7 @@ impl EventBuilder {
     /// <https://github.com/nostr-protocol/nips/blob/master/51.md>
     pub fn interest_set<ID, I, S>(identifier: ID, hashtags: I) -> Self
     where
-        ID: Into<String>,
+        ID: AsRef<str>,
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
@@ -1605,7 +1611,7 @@ impl EventBuilder {
     /// <https://github.com/nostr-protocol/nips/blob/master/51.md>
     pub fn emoji_set<ID, I>(identifier: ID, emojis: I) -> Self
     where
-        ID: Into<String>,
+        ID: AsRef<str>,
         I: IntoIterator<Item = (String, UncheckedUrl)>,
     {
         let tags: Vec<Tag> = vec![Tag::identifier(identifier)];

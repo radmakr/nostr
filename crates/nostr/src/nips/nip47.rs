@@ -524,7 +524,7 @@ impl Request {
         Ok(EventBuilder::new(
             Kind::WalletConnectRequest,
             encrypted,
-            [Tag::public_key(uri.public_key.clone())],
+            [Tag::public_key(&uri.public_key)],
         )
         .to_event(&keys)?)
     }
