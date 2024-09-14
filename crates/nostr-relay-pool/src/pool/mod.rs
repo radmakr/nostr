@@ -41,6 +41,17 @@ pub enum RelayPoolNotification {
         /// Event
         event: Box<Event>,
     },
+    /// Error during event handling
+    EventHandlingError {
+        /// Relay url
+        relay_url: Url,
+        /// Subscription ID
+        subscription_id: SubscriptionId,
+        /// Event ID
+        id: EventId,
+        /// Error
+        error: String,
+    },
     /// Received a [`RelayMessage`]. Includes messages wrapping events that were sent by this client.
     Message {
         /// Relay url

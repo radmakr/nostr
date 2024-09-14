@@ -14,7 +14,7 @@ use bitcoin::secp256k1;
 use bitcoin::secp256k1::schnorr::Signature;
 
 use super::{id, tag};
-use crate::{key, Event, EventId, JsonUtil, Kind, PartialEvent, PublicKey, Tag, Timestamp};
+use crate::{key, Event, EventId, JsonUtil, Kind, PublicKey, Tag, Timestamp};
 
 /// [`RawEvent`] error
 #[derive(Debug)]
@@ -113,18 +113,5 @@ impl TryFrom<RawEvent> for Event {
             raw.content,
             sig,
         ))
-    }
-}
-
-impl TryFrom<&RawEvent> for PartialEvent {
-    type Error = Error;
-
-    fn try_from(raw: &RawEvent) -> Result<Self, Self::Error> {
-        let id: EventId = EventId::from_hex(&raw.id)?;
-        let public_key: PublicKey = PublicKey::from_hex(&raw.pubkey)?;
-        Ok(Self {
-            id,
-            pubkey: public_key,
-        })
     }
 }

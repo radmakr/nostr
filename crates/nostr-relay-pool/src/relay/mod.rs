@@ -63,6 +63,15 @@ pub enum RelayNotification {
         /// Relay Status
         status: RelayStatus,
     },
+    /// Error during event handling
+    EventHandlingError {
+        /// Subscription ID
+        subscription_id: SubscriptionId,
+        /// Event ID
+        id: EventId,
+        /// Error
+        error: String,
+    },
     /// Authenticated to relay
     ///
     /// <https://github.com/nostr-protocol/nips/blob/master/42.md>

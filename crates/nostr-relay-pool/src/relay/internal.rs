@@ -15,6 +15,7 @@ use async_wsocket::{ConnectionMode, Sink, Stream, WsMessage};
 use atomic_destructor::AtomicDestroyer;
 use negentropy::{Bytes, Id, Negentropy, NegentropyStorageVector};
 use negentropy_deprecated::{Bytes as BytesDeprecated, Negentropy as NegentropyDeprecated};
+use nostr::event::raw::RawEvent;
 use nostr::message::MessageHandleError;
 use nostr::nips::nip01::Coordinate;
 #[cfg(feature = "nip11")]
@@ -445,6 +446,16 @@ impl InternalRelay {
                             status,
                         }
                     }
+                    RelayNotification::EventHandlingError {
+                        subscription_id,
+                        id,
+                        error,
+                    } => RelayPoolNotification::EventHandlingError {
+                        relay_url: self.url(),
+                        subscription_id,
+                        id,
+                        error,
+                    },
                     RelayNotification::Authenticated => RelayPoolNotification::Authenticated {
                         relay_url: self.url(),
                     },
@@ -886,6 +897,7 @@ impl InternalRelay {
         self.stats.add_bytes_received(size);
 
         // Check message size
+        // TODO: notify this error?
         if let Some(max_size) = self.opts.limits.messages.max_size {
             let max_size: usize = max_size as usize;
             if size > max_size {
@@ -903,122 +915,146 @@ impl InternalRelay {
                 subscription_id,
                 event,
             } => {
-                let kind: Kind = Kind::from(event.kind);
+                let id: EventId = EventId::from_hex(&event.id)?;
 
-                // Check event size
-                if let Some(max_size) = self.opts.limits.events.get_max_size(&kind) {
-                    let size: usize = event.as_json().as_bytes().len();
-                    let max_size: usize = max_size as usize;
-                    if size > max_size {
-                        return Err(Error::EventTooLarge { size, max_size });
+                // Handle event message
+                // If ok, return parsed message
+                // If err, send handle event error notification and return error
+                match self.handle_raw_event(&subscription_id, id, event).await {
+                    Ok(msg) => Ok(msg),
+                    Err(e) => {
+                        let notification = RelayNotification::EventHandlingError {
+                            subscription_id: SubscriptionId::new(subscription_id),
+                            id,
+                            error: e.to_string(),
+                        };
+                        self.send_notification(notification, false).await;
+                        Err(e)
                     }
                 }
-
-                // Check tags limit
-                if let Some(max_num_tags) = self.opts.limits.events.get_max_num_tags(&kind) {
-                    let size: usize = event.tags.len();
-                    let max_num_tags: usize = max_num_tags as usize;
-                    if size > max_num_tags {
-                        return Err(Error::TooManyTags {
-                            size,
-                            max_size: max_num_tags,
-                        });
-                    }
-                }
-
-                // Deserialize partial event (id, pubkey and sig)
-                let partial_event: PartialEvent = PartialEvent::from_raw(&event)?;
-
-                // Check blacklist (ID)
-                if self.blacklist.has_id(&partial_event.id).await {
-                    return Err(Error::EventIdBlacklisted(partial_event.id));
-                }
-
-                // Check blacklist (author public key)
-                if self.blacklist.has_public_key(&partial_event.pubkey).await {
-                    return Err(Error::PublicKeyBlacklisted(partial_event.pubkey));
-                }
-
-                // Check min POW
-                let difficulty: u8 = self.opts.get_pow_difficulty();
-                if difficulty > 0 && !partial_event.id.check_pow(difficulty) {
-                    return Err(Error::PowDifficultyTooLow { min: difficulty });
-                }
-
-                // TODO: check if word/hashtag is blacklisted
-
-                // Check if event status
-                let status: DatabaseEventStatus = self.database.check_id(&partial_event.id).await?;
-
-                // Event deleted
-                if let DatabaseEventStatus::Deleted = status {
-                    return Ok(None);
-                }
-
-                // Deserialize missing fields
-                let missing: MissingPartialEvent = MissingPartialEvent::from_raw(event)?;
-
-                // Check if event is replaceable and has coordinate
-                if missing.kind.is_replaceable() || missing.kind.is_parameterized_replaceable() {
-                    let coordinate: Coordinate =
-                        Coordinate::new(missing.kind, partial_event.pubkey)
-                            .identifier(missing.identifier().unwrap_or_default());
-
-                    // Check if coordinate has been deleted
-                    if self
-                        .database
-                        .has_coordinate_been_deleted(&coordinate, &missing.created_at)
-                        .await?
-                    {
-                        return Ok(None);
-                    }
-                }
-
-                // Set event as seen by relay
-                if let Err(e) = self
-                    .database
-                    .event_id_seen(partial_event.id, self.url())
-                    .await
-                {
-                    tracing::error!(
-                        "Impossible to set event {} as seen by relay: {e}",
-                        partial_event.id
-                    );
-                }
-
-                // Compose full event
-                let event: Event = partial_event.merge(missing)?;
-
-                // Check if it's expired
-                if event.is_expired() {
-                    return Err(Error::EventExpired);
-                }
-
-                if let DatabaseEventStatus::NotExistent = status {
-                    // Verify event
-                    event.verify()?;
-
-                    // Save into database
-                    self.database.save_event(&event).await?;
-
-                    // Send notification
-                    self.send_notification(
-                        RelayNotification::Event {
-                            subscription_id: SubscriptionId::new(&subscription_id),
-                            event: Box::new(event.clone()),
-                        },
-                        true,
-                    )
-                    .await;
-                }
-
-                Ok(Some(RelayMessage::Event {
-                    subscription_id: SubscriptionId::new(subscription_id),
-                    event: Box::new(event),
-                }))
             }
             m => Ok(Some(RelayMessage::try_from(m)?)),
         }
+    }
+
+    async fn handle_raw_event(
+        &self,
+        subscription_id: &str,
+        id: EventId,
+        event: RawEvent,
+    ) -> Result<Option<RelayMessage>, Error> {
+        let kind: Kind = Kind::from(event.kind);
+
+        // Check event size
+        if let Some(max_size) = self.opts.limits.events.get_max_size(&kind) {
+            let size: usize = event.as_json().as_bytes().len();
+            let max_size: usize = max_size as usize;
+            if size > max_size {
+                return Err(Error::EventTooLarge { size, max_size });
+            }
+        }
+
+        // Check tags limit
+        if let Some(max_num_tags) = self.opts.limits.events.get_max_num_tags(&kind) {
+            let size: usize = event.tags.len();
+            let max_num_tags: usize = max_num_tags as usize;
+            if size > max_num_tags {
+                return Err(Error::TooManyTags {
+                    size,
+                    max_size: max_num_tags,
+                });
+            }
+        }
+
+        // Deserialize partial event (id and pubkey)
+        let partial_event: PartialEvent = PartialEvent::from_raw_and_id(id, &event)?;
+
+        // Check blacklist (ID)
+        if self.blacklist.has_id(&partial_event.id).await {
+            return Err(Error::EventIdBlacklisted(partial_event.id));
+        }
+
+        // Check blacklist (author public key)
+        if self.blacklist.has_public_key(&partial_event.pubkey).await {
+            return Err(Error::PublicKeyBlacklisted(partial_event.pubkey));
+        }
+
+        // Check min POW
+        let difficulty: u8 = self.opts.get_pow_difficulty();
+        if difficulty > 0 && !partial_event.id.check_pow(difficulty) {
+            return Err(Error::PowDifficultyTooLow { min: difficulty });
+        }
+
+        // TODO: check if word/hashtag is blacklisted
+
+        // Check if event status
+        let status: DatabaseEventStatus = self.database.check_id(&partial_event.id).await?;
+
+        // Event deleted
+        if let DatabaseEventStatus::Deleted = status {
+            return Ok(None);
+        }
+
+        // Deserialize missing fields
+        let missing: MissingPartialEvent = MissingPartialEvent::from_raw(event)?;
+
+        // Check if event is replaceable and has coordinate
+        if missing.kind.is_replaceable() || missing.kind.is_parameterized_replaceable() {
+            let coordinate: Coordinate = Coordinate::new(missing.kind, partial_event.pubkey)
+                .identifier(missing.identifier().unwrap_or_default());
+
+            // Check if coordinate has been deleted
+            if self
+                .database
+                .has_coordinate_been_deleted(&coordinate, &missing.created_at)
+                .await?
+            {
+                return Ok(None);
+            }
+        }
+
+        // Set event as seen by relay
+        if let Err(e) = self
+            .database
+            .event_id_seen(partial_event.id, self.url())
+            .await
+        {
+            tracing::error!(
+                "Impossible to set event {} as seen by relay: {e}",
+                partial_event.id
+            );
+        }
+
+        // Compose full event
+        let event: Event = partial_event.merge(missing)?;
+
+        // Check if it's expired
+        if event.is_expired() {
+            return Err(Error::EventExpired);
+        }
+
+        if let DatabaseEventStatus::NotExistent = status {
+            // Verify event
+            event.verify()?;
+
+            // Save into database
+            self.database.save_event(&event).await?;
+
+            // Send notification
+            self.send_notification(
+                RelayNotification::Event {
+                    subscription_id: SubscriptionId::new(subscription_id),
+                    event: Box::new(event.clone()),
+                },
+                true,
+            )
+            .await;
+        }
+
+        Ok(Some(RelayMessage::Event {
+            subscription_id: SubscriptionId::new(subscription_id),
+            event: Box::new(event),
+        }))
     }
 
     pub async fn disconnect(&self) -> Result<(), Error> {
