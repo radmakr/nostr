@@ -43,7 +43,7 @@ pip install nostr-sdk
 Alternatively, you can manually add the dependency in your `requrements.txt`, `setup.py`, etc.:
 
 ```
-nostr-sdk==0.35.0
+nostr-sdk==0.35.1
 ```
 
 Import the library in your code:
