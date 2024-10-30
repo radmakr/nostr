@@ -1,5 +1,9 @@
 # Nostr
-	
+
+## ⚠️ Deprecated ⚠️
+
+Use [nostr-sdk](https://www.npmjs.com/package/@rust-nostr/nostr-sdk) instead.
+
 ## Description
 
 JavaScript bindings of [nostr](https://github.com/rust-nostr/nostr) library.
