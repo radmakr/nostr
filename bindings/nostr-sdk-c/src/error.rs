@@ -2,25 +2,50 @@
 // Copyright (c) 2023-2024 Rust Nostr Developers
 // Distributed under the MIT software license
 
-// pub enum CResult {
-//     code: i32,
-//     message: *const c_char,
-//     value: *const c_char, // Change type as needed for different results
-// }
+use std::ffi::{c_char, CString};
+
+use nostr_sdk::Result as UniversalResult;
 
 #[repr(C)]
-pub struct CError {
-    message: String,
+pub struct Result<T> {
+    pub success: bool,
+    pub output: ResultOutput<T>,
 }
 
-pub type Result<T> = core::result::Result<T, CError>;
+impl<T> Result<T> {
+    fn ok(val: T) -> Self {
+        Self {
+            success: true,
+            output: ResultOutput {
+                ok: Box::into_raw(Box::new(val)),
+            },
+        }
+    }
 
-#[inline(always)]
-pub fn into_err<E>(error: E) -> CError
+    fn err(e: String) -> Self {
+        let c_string = CString::new(e).unwrap();
+        Self {
+            success: false,
+            output: ResultOutput {
+                err: c_string.into_raw(),
+            },
+        }
+    }
+}
+
+#[repr(C)]
+pub union ResultOutput<T> {
+    ok: *const T,
+    err: *const c_char,
+}
+
+#[inline]
+pub fn handle_result<F, T>(f: F) -> Result<T>
 where
-    E: std::error::Error,
+    F: FnOnce() -> UniversalResult<T>,
 {
-    CError {
-        message: error.to_string(),
+    match f() {
+        Ok(value) => Result::ok(value),
+        Err(e) => Result::err(e.to_string()),
     }
 }
