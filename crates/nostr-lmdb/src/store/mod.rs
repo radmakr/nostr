@@ -70,10 +70,6 @@ impl Store {
 
     /// Store an event.
     pub async fn save_event(&self, event: &Event) -> Result<SaveEventStatus, Error> {
-        if event.kind.is_ephemeral() {
-            return Ok(SaveEventStatus::Rejected(RejectedReason::Ephemeral));
-        }
-
         // TODO: avoid this clone
         let event = event.clone();
 
