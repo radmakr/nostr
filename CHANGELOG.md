@@ -103,6 +103,7 @@
 * nostr: add `HttpData::to_authorization` ([Yuki Kishimoto])
 * nostr: add `CoordinateBorrow` struct ([Yuki Kishimoto])
 * nostr: add `Filter::custom_tags` ([Yuki Kishimoto])
+* nostr: add multicast addr support to `RelayUrl` ([Yuki Kishimoto])
 * database: add `Events::first_owned` and `Events::last_owned` ([Yuki Kishimoto])
 * database: impl `FlatBufferDecodeBorrowed` for `EventBorrow` ([Yuki Kishimoto])
 * database: add `NostrDatabaseWipe` trait ([Yuki Kishimoto])
