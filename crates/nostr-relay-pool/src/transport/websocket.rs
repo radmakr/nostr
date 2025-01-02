@@ -11,7 +11,7 @@ use std::time::Duration;
 use async_wsocket::futures_util::{self, SinkExt, StreamExt, TryStreamExt};
 use async_wsocket::{ConnectionMode, Message, WebSocket};
 use nostr::util::BoxedFuture;
-use nostr::Url;
+use nostr::RelayUrl;
 
 use super::error::TransportError;
 
@@ -66,7 +66,7 @@ pub trait WebSocketTransport: fmt::Debug + Send + Sync {
     /// Connect
     fn connect<'a>(
         &'a self,
-        url: &'a Url,
+        url: &'a RelayUrl,
         mode: &'a ConnectionMode,
         timeout: Duration,
     ) -> BoxedFuture<'a, Result<(Sink, Stream), TransportError>>;
@@ -83,13 +83,13 @@ impl WebSocketTransport for DefaultWebsocketTransport {
 
     fn connect<'a>(
         &'a self,
-        url: &'a Url,
+        url: &'a RelayUrl,
         mode: &'a ConnectionMode,
         timeout: Duration,
     ) -> BoxedFuture<'a, Result<(Sink, Stream), TransportError>> {
         Box::pin(async move {
             // Connect
-            let socket: WebSocket = async_wsocket::connect(url, mode, timeout)
+            let socket: WebSocket = async_wsocket::connect(url.into(), mode, timeout)
                 .await
                 .map_err(TransportError::backend)?;
 

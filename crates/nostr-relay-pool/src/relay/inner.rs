@@ -2,13 +2,13 @@
 // Copyright (c) 2023-2024 Rust Nostr Developers
 // Distributed under the MIT software license
 
-use std::cmp;
 use std::collections::{HashMap, HashSet};
 #[cfg(feature = "nip11")]
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use std::{cmp, io};
 
 use async_utility::{task, time};
 use async_wsocket::futures_util::{self, SinkExt, StreamExt};
@@ -37,6 +37,7 @@ use crate::pool::RelayPoolNotification;
 use crate::relay::status::AtomicRelayStatus;
 use crate::shared::SharedState;
 use crate::transport::websocket::{Sink, Stream};
+use crate::transport::Transport;
 
 #[derive(Debug)]
 struct RelayChannels {
@@ -388,7 +389,7 @@ impl InnerRelay {
         }
     }
 
-    pub(super) fn spawn_connection_task(&self, mut stream: Option<(Sink, Stream)>) {
+    pub(super) fn spawn_connection_task(&self, mut stream: Option<Transport>) {
         if self.is_running() {
             tracing::warn!(url = %self.url, "Connection task is already running.");
             return;
@@ -521,12 +522,28 @@ impl InnerRelay {
         &self,
         timeout: Duration,
         status_on_failure: RelayStatus,
-    ) -> Result<(Sink, Stream), Error> {
+    ) -> Result<Transport, Error> {
         // Update status
         self.set_status(RelayStatus::Connecting, true);
 
         // Add attempt
         self.stats.new_attempt();
+
+        // Connect (multicast)
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.url.is_multicast() {
+            // Connect
+            let (socket, multicast_addr) =
+                self.state.multicast_transport.connect(&self.url).await?;
+
+            // Update status
+            self.set_status(RelayStatus::Connected, true);
+
+            // Increment success stats
+            self.stats.new_success();
+
+            return Ok(Transport::Multicast(socket, multicast_addr));
+        }
 
         // Try to connect
         // If during connection the termination request is received, abort the connection and return error.
@@ -541,7 +558,7 @@ impl InnerRelay {
                 // Increment success stats
                 self.stats.new_success();
 
-                Ok((ws_tx, ws_rx))
+                Ok(Transport::WebSocket(ws_tx, ws_rx))
             }
             Err(e) => {
                 // Update status
@@ -561,13 +578,13 @@ impl InnerRelay {
     /// If `stream` arg is passed, no connection attempt will be done.
     async fn connect_and_run(
         &self,
-        stream: Option<(Sink, Stream)>,
+        transport: Option<Transport>,
         rx_nostr: &mut MutexGuard<'_, Receiver<Vec<ClientMessage>>>,
         last_ws_error: &mut Option<String>,
     ) {
-        match stream {
+        match transport {
             // Already have a stream, go to post-connection stage
-            Some((ws_tx, ws_rx)) => self.post_connection(ws_tx, ws_rx, rx_nostr).await,
+            Some(transport) => self.post_connection(transport, rx_nostr).await,
             // No stream is passed, try to connect
             // Set the status to "disconnected" to allow to automatic retries
             None => match self
@@ -575,7 +592,7 @@ impl InnerRelay {
                 .await
             {
                 // Connection success, go to post-connection stage
-                Ok((ws_tx, ws_rx)) => self.post_connection(ws_tx, ws_rx, rx_nostr).await,
+                Ok(transport) => self.post_connection(transport, rx_nostr).await,
                 // Error during connection
                 Err(e) => {
                     // TODO: avoid string allocation. The error is converted to string only to perform the `!=` binary operation.
@@ -603,46 +620,136 @@ impl InnerRelay {
     /// Run message handlers, pinger and other services
     async fn post_connection(
         &self,
-        mut ws_tx: Sink,
-        ws_rx: Stream,
+        transport: Transport,
         rx_nostr: &mut MutexGuard<'_, Receiver<Vec<ClientMessage>>>,
     ) {
-        // Request information document
-        #[cfg(feature = "nip11")]
-        self.request_nip11_document();
+        match transport {
+            Transport::WebSocket(mut ws_tx, ws_rx) => {
+                // Request information document
+                #[cfg(feature = "nip11")]
+                self.request_nip11_document();
 
-        // (Re)subscribe to relay
-        if self.flags.can_read() {
-            if let Err(e) = self.resubscribe().await {
-                tracing::error!(url = %self.url, error = %e, "Impossible to subscribe.")
+                // (Re)subscribe to relay
+                if self.flags.can_read() {
+                    if let Err(e) = self.resubscribe().await {
+                        tracing::error!(url = %self.url, error = %e, "Impossible to subscribe.")
+                    }
+                }
+
+                let ping: PingTracker = PingTracker::default();
+
+                // Wait that one of the futures terminates/completes
+                // Also also termination here, to allow to close the connection in case of termination request.
+                tokio::select! {
+                    // Message receiver handler
+                    res = self.receiver_message_handler(ws_rx, &ping) => match res {
+                        Ok(()) => tracing::trace!(url = %self.url, "Relay received exited."),
+                        Err(e) => tracing::error!(url = %self.url, error = %e, "Relay receiver exited with error.")
+                    },
+                    // Message sender handler
+                    res = self.sender_message_handler(&mut ws_tx, rx_nostr, &ping) => match res {
+                        Ok(()) => tracing::trace!(url = %self.url, "Relay sender exited."),
+                        Err(e) => tracing::error!(url = %self.url, error = %e, "Relay sender exited with error.")
+                    },
+                    // Termination handler
+                    _ = self.handle_terminate() => {},
+                    // Pinger
+                    _ = self.pinger() => {}
+                }
+
+                // Always try to close the WebSocket connection
+                match close_ws(&mut ws_tx).await {
+                    Ok(..) => tracing::debug!("WebSocket connection closed."),
+                    Err(e) => tracing::error!(error = %e, "Can't close WebSocket connection."),
+                }
             }
-        }
+            Transport::Multicast(socket, addr) => {
+                let mut rx_nostr = self.atomic.channels.rx_nostr().await;
 
-        let ping: PingTracker = PingTracker::default();
+                let mut buf = [0u8; 65535];
 
-        // Wait that one of the futures terminates/completes
-        // Also also termination here, to allow to close the connection in case of termination request.
-        tokio::select! {
-            // Message receiver handler
-            res = self.receiver_message_handler(ws_rx, &ping) => match res {
-                Ok(()) => tracing::trace!(url = %self.url, "Relay received exited."),
-                Err(e) => tracing::error!(url = %self.url, error = %e, "Relay receiver exited with error.")
-            },
-            // Message sender handler
-            res = self.sender_message_handler(&mut ws_tx, rx_nostr, &ping) => match res {
-                Ok(()) => tracing::trace!(url = %self.url, "Relay sender exited."),
-                Err(e) => tracing::error!(url = %self.url, error = %e, "Relay sender exited with error.")
-            },
-            // Termination handler
-            _ = self.handle_terminate() => {},
-            // Pinger
-            _ = self.pinger() => {}
-        }
+                loop {
+                    tokio::select! {
+                        // Nostr channel receiver
+                        Some(msgs) = rx_nostr.recv() => {
+                            // Serialize messages to JSON and compose WebSocket text messages
+                            let msgs: Vec<Vec<u8>> = msgs
+                                .into_iter()
+                                .map(|msg| {
+                                    // Serialize to JSON
+                                    let json: String = msg.as_json();
+                                    let len: usize = json.len();
 
-        // Always try to close the WebSocket connection
-        match close_ws(&mut ws_tx).await {
-            Ok(..) => tracing::debug!("WebSocket connection closed."),
-            Err(e) => tracing::error!(error = %e, "Can't close WebSocket connection."),
+                                    // Construct new buf
+                                    let mut buf: Vec<u8> = Vec::with_capacity(4 + len);
+
+                                    // Write the length of the message as 4 bytes (big-endian)
+                                    buf.extend_from_slice(&(len as u32).to_be_bytes());
+
+                                    // Append the JSON message bytes
+                                    buf.extend_from_slice(json.as_bytes());
+
+                                    buf
+                                }).collect();
+
+                            // Calculate messages size
+                            let size: usize = msgs.iter().map(|msg| msg.len()).sum();
+
+                            // Log
+                            tracing::debug!("Sending buf to '{}' (size: {size} bytes)", self.url);
+
+                            // Send UDP messages
+                            for msg in msgs.into_iter() {
+                                if let Err(e) = socket.send_to(&msg, addr).await {
+                                    tracing::error!(addr = %addr, error = %e, "Can't send UDP message.");
+                                    break;
+                                }
+                            }
+
+                            // Increase sent bytes
+                            self.stats.add_bytes_sent(size);
+                        }
+                        // UDP socket receiver
+                        res = socket.recv_from(&mut buf) => {
+                            match res {
+                                Ok((size, source)) => {
+                                    let parsed_size = u32::from_be_bytes(buf[0..4].try_into().unwrap()) as usize;
+                                    tracing::debug!("multicast: read size {} from start of header", size - 4);
+
+                                    if size != parsed_size + 4 {
+                                        tracing::error!(
+                                            "multicast: partial data received: expected {}, got {}",
+                                            parsed_size, size
+                                        );
+                                    } else {
+                                         let json = String::from_utf8_lossy(&buf[4..size]).to_string();
+                                        tracing::debug!("multicast: received {} bytes from {}: {}", size, source, json);
+
+                                        match ClientMessage::from_json(&json) {
+                                            Ok(msg) => match msg {
+                                                ClientMessage::Event(event) => {
+                                                    let id = SubscriptionId::new("multicast");
+                                                    let json = RelayMessage::Event { subscription_id: id, event }.as_json();
+                                                    self.handle_relay_message(&json).await;
+                                                }
+                                                _ => tracing::warn!("Only EVENT messages are currently supported for multicast"),
+                                            }
+                                            Err(e) => tracing::error!("Received invalid msg: {e}")
+                                        }
+                                    }
+                                }
+                                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                                    // No data available, continue
+                                }
+                                Err(e) => {
+                                    tracing::error!("multicast: error receiving data: {}", e);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

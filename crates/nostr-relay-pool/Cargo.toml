@@ -15,6 +15,7 @@ keywords = ["nostr", "relay", "pool"]
 default = []
 tor = ["async-wsocket/tor"]
 nip11 = ["nostr/nip11"]
+# TODO: add multicast and experimental features
 
 [dependencies]
 async-utility.workspace = true
@@ -26,6 +27,9 @@ nostr = { workspace = true, features = ["std"] }
 nostr-database.workspace = true
 tokio = { workspace = true, features = ["macros", "sync"] }
 tracing.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["net"] }
 
 [dev-dependencies]
 nostr-relay-builder.workspace = true

@@ -40,7 +40,7 @@ pub use self::options::{
 pub use self::stats::RelayConnectionStats;
 pub use self::status::RelayStatus;
 use crate::shared::SharedState;
-use crate::transport::websocket::{Sink, Stream};
+use crate::transport::Transport;
 
 /// Subscription auto-closed reason
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -322,13 +322,13 @@ impl Relay {
 
         // Try to connect
         // This will set the status to "terminated" if the connection fails
-        let stream: (Sink, Stream) = self
+        let transport: Transport = self
             .inner
             ._try_connect(timeout, RelayStatus::Terminated)
             .await?;
 
         // Spawn connection task
-        self.inner.spawn_connection_task(Some(stream));
+        self.inner.spawn_connection_task(Some(transport));
 
         Ok(())
     }
@@ -361,6 +361,11 @@ impl Relay {
         // Send message
         // TODO: avoid clone
         self.send_msg(ClientMessage::event(event))?;
+
+        // If multicast, skip wait for OK
+        if self.inner.url.is_multicast() {
+            return Ok((id, true, String::new()));
+        }
 
         // Wait for OK
         self.inner

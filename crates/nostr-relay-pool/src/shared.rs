@@ -11,6 +11,10 @@ use nostr::NostrSigner;
 use nostr_database::{IntoNostrDatabase, MemoryDatabase, NostrDatabase};
 use tokio::sync::RwLock;
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::transport::multicast::{
+    DefaultMulticastTransport, IntoMulticastTransport, MulticastTransport,
+};
 use crate::transport::websocket::{
     DefaultWebsocketTransport, IntoWebSocketTransport, WebSocketTransport,
 };
@@ -36,6 +40,8 @@ impl fmt::Display for SharedStateError {
 pub struct SharedState {
     pub(crate) database: Arc<dyn NostrDatabase>,
     pub(crate) transport: Arc<dyn WebSocketTransport>,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) multicast_transport: Arc<dyn MulticastTransport>,
     signer: Arc<RwLock<Option<Arc<dyn NostrSigner>>>>,
     nip42_auto_authentication: Arc<AtomicBool>,
     min_pow_difficulty: Arc<AtomicU8>,
@@ -48,6 +54,8 @@ impl Default for SharedState {
         Self {
             database: MemoryDatabase::new().into_nostr_database(),
             transport: DefaultWebsocketTransport.into_transport(),
+            #[cfg(not(target_arch = "wasm32"))]
+            multicast_transport: DefaultMulticastTransport.into_transport(),
             signer: Arc::new(RwLock::new(None)),
             nip42_auto_authentication: Arc::new(AtomicBool::new(true)),
             min_pow_difficulty: Arc::new(AtomicU8::new(0)),
@@ -68,6 +76,7 @@ impl SharedState {
         Self {
             database,
             transport,
+            multicast_transport: DefaultMulticastTransport.into_transport(),
             signer: Arc::new(RwLock::new(signer)),
             nip42_auto_authentication: Arc::new(AtomicBool::new(nip42_auto_authentication)),
             filtering: RelayFiltering::new(filtering_mode),
