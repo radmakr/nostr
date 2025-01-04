@@ -11,6 +11,8 @@ use std::fmt;
 pub enum DatabaseError {
     /// An error happened in the underlying database backend.
     Backend(Box<dyn std::error::Error + Send + Sync>),
+    /// Something went wrong
+    SomethingWentWrong,
     /// Not supported
     NotSupported,
 }
@@ -21,6 +23,7 @@ impl fmt::Display for DatabaseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Backend(e) => write!(f, "{e}"),
+            Self::SomethingWentWrong => write!(f, "something went wrong"),
             Self::NotSupported => write!(f, "not supported"),
         }
     }

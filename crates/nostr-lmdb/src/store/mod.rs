@@ -66,6 +66,12 @@ impl Store {
         Ok(task::spawn_blocking(move || f(db, &mut fbb)).await?)
     }
 
+    /// Get a read transaction
+    #[inline]
+    pub(crate) fn read_txn(&self) -> Result<RoTxn, Error> {
+        self.db.read_txn()
+    }
+
     /// Store an event.
     pub async fn save_event(&self, event: &Event) -> Result<SaveEventStatus, Error> {
         if event.kind.is_ephemeral() {
@@ -212,15 +218,14 @@ impl Store {
     }
 
     /// Get an event by ID
-    pub async fn get_event_by_id(&self, id: &EventId) -> Result<Option<Event>, Error> {
-        let bytes = id.to_bytes();
-        self.interact(move |db| {
-            let txn = db.read_txn()?;
-            let event: Option<Event> = db.get_event_by_id(&txn, &bytes)?.map(|e| e.into_owned());
-            txn.commit()?;
-            Ok(event)
-        })
-        .await?
+    pub fn get_event_by_id(&self, id: &EventId) -> Result<Option<Event>, Error> {
+        let txn = self.db.read_txn()?;
+        let event: Option<Event> = self
+            .db
+            .get_event_by_id(&txn, id.as_bytes())?
+            .map(|e| e.into_owned());
+        txn.commit()?;
+        Ok(event)
     }
 
     /// Do we have an event
@@ -260,47 +265,33 @@ impl Store {
         .await?
     }
 
-    pub async fn count(&self, filters: Vec<Filter>) -> Result<usize, Error> {
-        self.interact(move |db| {
-            let txn = db.read_txn()?;
-            let output = db.query(&txn, filters)?;
-            let len: usize = output.len();
-            txn.commit()?;
-            Ok(len)
-        })
-        .await?
-    }
-
     // Lookup ID: EVENT_ORD_IMPL
-    pub async fn query(&self, filters: Vec<Filter>) -> Result<Events, Error> {
-        self.interact(move |db| {
-            let mut events: Events = Events::new(&filters);
-
-            let txn: RoTxn = db.read_txn()?;
-            let output: BTreeSet<EventBorrow> = db.query(&txn, filters)?;
-            events.extend(output.into_iter().map(|e| e.into_owned()));
-            txn.commit()?;
-
-            Ok(events)
-        })
-        .await?
+    #[inline]
+    pub fn query<'a>(
+        &self,
+        txn: &'a RoTxn,
+        filters: Vec<Filter>,
+    ) -> Result<BTreeSet<EventBorrow<'a>>, Error> {
+        self.db.query(txn, filters)
     }
 
-    pub async fn negentropy_items(
-        &self,
-        filter: Filter,
-    ) -> Result<Vec<(EventId, Timestamp)>, Error> {
-        self.interact(move |db| {
-            let txn = db.read_txn()?;
-            let events = db.query(&txn, vec![filter])?;
-            let items = events
-                .into_iter()
-                .map(|e| (EventId::from_byte_array(*e.id), e.created_at))
-                .collect();
-            txn.commit()?;
-            Ok(items)
-        })
-        .await?
+    pub fn count(&self, filters: Vec<Filter>) -> Result<usize, Error> {
+        let txn = self.db.read_txn()?;
+        let output = self.query(&txn, filters)?;
+        let len: usize = output.len();
+        txn.commit()?;
+        Ok(len)
+    }
+
+    pub fn negentropy_items(&self, filter: Filter) -> Result<Vec<(EventId, Timestamp)>, Error> {
+        let txn = self.db.read_txn()?;
+        let events = self.query(&txn, vec![filter])?;
+        let items = events
+            .into_iter()
+            .map(|e| (EventId::from_byte_array(*e.id), e.created_at))
+            .collect();
+        txn.commit()?;
+        Ok(items)
     }
 
     pub async fn delete(&self, filter: Filter) -> Result<(), Error> {

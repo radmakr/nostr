@@ -10,14 +10,29 @@
 #![warn(rustdoc::bare_urls)]
 #![allow(clippy::mutable_key_type)]
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 
+use heed::RoTxn;
 use nostr_database::prelude::*;
 
 mod store;
 
 use self::store::Store;
+
+/// LMDB transaction
+pub struct LmdbTransaction<'a> {
+    txn: Option<RoTxn<'a>>,
+}
+
+impl Drop for LmdbTransaction<'_> {
+    fn drop(&mut self) {
+        if let Some(txn) = self.txn.take() {
+            // TODO: avoid the expect
+            txn.commit().expect("Failed to commit transaction");
+        }
+    }
+}
 
 /// LMDB Nostr Database
 #[derive(Debug)]
@@ -43,6 +58,24 @@ impl NostrLMDB {
                 max_events: Some(100_000),
             }),
         })
+    }
+
+    /// Get transaction
+    #[inline]
+    pub fn txn(&self) -> Result<LmdbTransaction, DatabaseError> {
+        let txn = self.db.read_txn().map_err(DatabaseError::backend)?;
+        Ok(LmdbTransaction { txn: Some(txn) })
+    }
+
+    /// Zero-copy query
+    #[inline]
+    pub fn zero_copy_query<'a>(
+        &self,
+        txn: &'a LmdbTransaction,
+        filters: Vec<Filter>,
+    ) -> Result<BTreeSet<EventBorrow<'a>>, DatabaseError> {
+        let txn: &'a RoTxn = txn.txn.as_ref().ok_or(DatabaseError::SomethingWentWrong)?;
+        self.db.query(txn, filters).map_err(DatabaseError::backend)
     }
 }
 
@@ -127,18 +160,25 @@ impl NostrEventsDatabase for NostrLMDB {
     async fn event_by_id(&self, event_id: &EventId) -> Result<Option<Event>, DatabaseError> {
         self.db
             .get_event_by_id(event_id)
-            .await
             .map_err(DatabaseError::backend)
     }
 
     #[inline]
     async fn count(&self, filters: Vec<Filter>) -> Result<usize, DatabaseError> {
-        self.db.count(filters).await.map_err(DatabaseError::backend)
+        self.db.count(filters).map_err(DatabaseError::backend)
     }
 
     #[inline]
     async fn query(&self, filters: Vec<Filter>) -> Result<Events, DatabaseError> {
-        self.db.query(filters).await.map_err(DatabaseError::backend)
+        let mut events: Events = Events::new(&filters);
+        let txn: RoTxn = self.db.read_txn().map_err(DatabaseError::backend)?;
+        let res = self
+            .db
+            .query(&txn, filters)
+            .map_err(DatabaseError::backend)?;
+        events.extend(res.into_iter().map(|e| e.into_owned()));
+        txn.commit().map_err(DatabaseError::backend)?;
+        Ok(events)
     }
 
     #[inline]
@@ -148,7 +188,6 @@ impl NostrEventsDatabase for NostrLMDB {
     ) -> Result<Vec<(EventId, Timestamp)>, DatabaseError> {
         self.db
             .negentropy_items(filter)
-            .await
             .map_err(DatabaseError::backend)
     }
 
