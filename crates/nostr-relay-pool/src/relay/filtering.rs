@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use nostr::{EventId, PartialEvent, PublicKey};
+use nostr::{Event, EventId, PublicKey};
 use tokio::sync::RwLock;
 
 pub(crate) enum CheckFiltering {
@@ -208,20 +208,20 @@ impl RelayFiltering {
         public_keys.contains(public_key)
     }
 
-    pub(crate) async fn check_partial_event(&self, partial_event: &PartialEvent) -> CheckFiltering {
+    pub(crate) async fn check_event(&self, event: &Event) -> CheckFiltering {
         match self.inner.mode.load() {
             RelayFilteringMode::Whitelist => {
-                if !self.has_public_key(&partial_event.pubkey).await {
-                    return CheckFiltering::PublicKeyNotInWhitelist(partial_event.pubkey);
+                if !self.has_public_key(&event.pubkey).await {
+                    return CheckFiltering::PublicKeyNotInWhitelist(event.pubkey);
                 }
             }
             RelayFilteringMode::Blacklist => {
-                if self.has_id(&partial_event.id).await {
-                    return CheckFiltering::EventIdBlacklisted(partial_event.id);
+                if self.has_id(&event.id).await {
+                    return CheckFiltering::EventIdBlacklisted(event.id);
                 }
 
-                if self.has_public_key(&partial_event.pubkey).await {
-                    return CheckFiltering::PublicKeyBlacklisted(partial_event.pubkey);
+                if self.has_public_key(&event.pubkey).await {
+                    return CheckFiltering::PublicKeyBlacklisted(event.pubkey);
                 }
             }
         };

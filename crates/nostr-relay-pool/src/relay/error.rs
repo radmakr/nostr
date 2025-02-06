@@ -28,8 +28,6 @@ pub enum Error {
     Event(event::Error),
     /// Event Builder error
     EventBuilder(builder::Error),
-    /// Partial Event error
-    PartialEvent(event::partial::Error),
     /// Hex error
     Hex(hex::Error),
     /// Negentropy error
@@ -131,7 +129,6 @@ impl fmt::Display for Error {
             Self::MessageHandle(e) => write!(f, "{e}"),
             Self::Event(e) => write!(f, "{e}"),
             Self::EventBuilder(e) => write!(f, "{e}"),
-            Self::PartialEvent(e) => write!(f, "{e}"),
             Self::Hex(e) => write!(f, "{e}"),
             Self::Negentropy(e) => write!(f, "{e}"),
             Self::NegentropyDeprecated(e) => write!(f, "{e}"),
@@ -211,12 +208,6 @@ impl From<event::Error> for Error {
 impl From<builder::Error> for Error {
     fn from(e: builder::Error) -> Self {
         Self::EventBuilder(e)
-    }
-}
-
-impl From<event::partial::Error> for Error {
-    fn from(e: event::partial::Error) -> Self {
-        Self::PartialEvent(e)
     }
 }
 

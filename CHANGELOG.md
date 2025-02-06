@@ -51,6 +51,7 @@
 
 ### Removed
 
+* nostr: remove `RawRelayMessage` ([Yuki Kishimoto])
 * database: remove deprecated ([Yuki Kishimoto])
 
 ### Deprecated

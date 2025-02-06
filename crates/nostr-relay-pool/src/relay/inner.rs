@@ -17,7 +17,6 @@ use async_wsocket::{ConnectionMode, Message};
 use atomic_destructor::AtomicDestroyer;
 use negentropy::{Id, Negentropy, NegentropyStorageVector};
 use negentropy_deprecated::{Bytes as BytesDeprecated, Negentropy as NegentropyDeprecated};
-use nostr::event::raw::RawEvent;
 use nostr::secp256k1::rand::{self, Rng};
 use nostr_database::prelude::*;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -948,24 +947,25 @@ impl InnerRelay {
         }
 
         // Handle msg
-        match RawRelayMessage::from_json(msg)? {
-            RawRelayMessage::Event {
+        match RelayMessage::from_json(msg)? {
+            RelayMessage::Event {
                 subscription_id,
                 event,
-            } => self.handle_raw_event(subscription_id, event).await,
-            m => Ok(Some(RelayMessage::try_from(m)?)),
+            } => {
+                self.handle_event_msg(subscription_id.into_owned(), event.into_owned())
+                    .await
+            }
+            m => Ok(Some(m)),
         }
     }
 
-    async fn handle_raw_event(
+    async fn handle_event_msg(
         &self,
-        subscription_id: String,
-        event: RawEvent,
+        subscription_id: SubscriptionId,
+        event: Event,
     ) -> Result<Option<RelayMessage<'static>>, Error> {
-        let kind: Kind = Kind::from(event.kind);
-
         // Check event size
-        if let Some(max_size) = self.opts.limits.events.get_max_size(&kind) {
+        if let Some(max_size) = self.opts.limits.events.get_max_size(&event.kind) {
             let size: usize = event.as_json().len();
             let max_size: usize = max_size as usize;
             if size > max_size {
@@ -974,7 +974,7 @@ impl InnerRelay {
         }
 
         // Check tags limit
-        if let Some(max_num_tags) = self.opts.limits.events.get_max_num_tags(&kind) {
+        if let Some(max_num_tags) = self.opts.limits.events.get_max_num_tags(&event.kind) {
             let size: usize = event.tags.len();
             let max_num_tags: usize = max_num_tags as usize;
             if size > max_num_tags {
@@ -985,16 +985,8 @@ impl InnerRelay {
             }
         }
 
-        // Deserialize partial event (id, pubkey and sig)
-        let partial_event: PartialEvent = PartialEvent::from_raw(&event)?;
-
         // Check filtering
-        match self
-            .state
-            .filtering()
-            .check_partial_event(&partial_event)
-            .await
-        {
+        match self.state.filtering().check_event(&event).await {
             CheckFiltering::Allow => {
                 // Nothing to do
             }
@@ -1014,29 +1006,20 @@ impl InnerRelay {
 
         // Check min POW
         let difficulty: u8 = self.state.minimum_pow_difficulty();
-        if difficulty > 0 && !partial_event.id.check_pow(difficulty) {
+        if difficulty > 0 && !event.id.check_pow(difficulty) {
             return Err(Error::PowDifficultyTooLow { min: difficulty });
         }
 
-        // TODO: check if word/hashtag is blacklisted
+        if event.is_expired() {
+            return Err(Error::EventExpired);
+        }
 
         // Check if event status
-        let status: DatabaseEventStatus = self.state.database().check_id(&partial_event.id).await?;
+        let status: DatabaseEventStatus = self.state.database().check_id(&event.id).await?;
 
         // Event deleted
         if let DatabaseEventStatus::Deleted = status {
             return Ok(None);
-        }
-
-        // Deserialize missing fields
-        let missing: MissingPartialEvent = MissingPartialEvent::from_raw(event)?;
-
-        // Compose full event
-        let event: Event = partial_event.merge(missing);
-
-        // Check if it's expired
-        if event.is_expired() {
-            return Err(Error::EventExpired);
         }
 
         // Check if coordinate has been deleted
@@ -1050,8 +1033,6 @@ impl InnerRelay {
                 return Ok(None);
             }
         }
-
-        let subscription_id: SubscriptionId = SubscriptionId::new(subscription_id);
 
         // TODO: check if filter match
 
