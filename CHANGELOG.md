@@ -51,7 +51,7 @@
 
 ### Removed
 
-* nostr: remove `RawRelayMessage` ([Yuki Kishimoto])
+* nostr: remove `RawRelayMessage`, `RawEvent`, `PartialEvent` and `MissingPartialEvent` ([Yuki Kishimoto])
 * database: remove deprecated ([Yuki Kishimoto])
 
 ### Deprecated
