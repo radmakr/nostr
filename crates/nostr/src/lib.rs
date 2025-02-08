@@ -32,6 +32,7 @@ extern crate alloc;
 extern crate serde;
 pub extern crate bitcoin_hashes as hashes;
 pub extern crate secp256k1;
+extern crate core;
 
 #[doc(hidden)]
 #[cfg(any(feature = "nip04", feature = "nip44"))]
