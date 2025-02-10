@@ -45,6 +45,10 @@ impl NostrDatabase for NostrLMDB {
 }
 
 impl NostrEventsDatabase for NostrLMDB {
+    fn process_event(&self, event: &Event) -> Result<(), DatabaseError> {
+        self.db.process_event(event).map_err(DatabaseError::backend)
+    }
+
     fn save_event<'a>(
         &'a self,
         event: &'a Event,

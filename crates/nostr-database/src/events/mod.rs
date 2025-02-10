@@ -95,6 +95,11 @@ where
 ///
 /// Store for the nostr events.
 pub trait NostrEventsDatabase: fmt::Debug + Send + Sync {
+    /// Process the event
+    ///
+    /// This method returns immediately and doesn't provide any information on if ingestion was successful or not.
+    fn process_event(&self, event: &Event) -> Result<(), DatabaseError>;
+
     /// Save [`Event`] into store
     ///
     /// **This method assumes that [`Event`] was already verified**

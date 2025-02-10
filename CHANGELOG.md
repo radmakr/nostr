@@ -50,6 +50,7 @@
 
 * nostr: add `EventBuilder::allow_self_tagging` ([Yuki Kishimoto])
 * pool: event verification cache ([Yuki Kishimoto])
+* database: add `NostrEventsDatabase::process_event` ([Yuki Kishimoto])
 * ffi: add Mac Catalyst support in Swift package ([Yuki Kishimoto])
 
 ### Fixed

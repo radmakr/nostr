@@ -71,19 +71,21 @@ impl NostrDatabase for NdbDatabase {
 }
 
 impl NostrEventsDatabase for NdbDatabase {
+    fn process_event(&self, event: &Event) -> Result<(), DatabaseError> {
+        let msg = RelayMessage::Event {
+            subscription_id: Cow::Owned(SubscriptionId::new("ndb")),
+            event: Cow::Borrowed(event),
+        };
+        let json: String = msg.as_json();
+        self.db.process_event(&json).map_err(DatabaseError::backend)
+    }
+
     fn save_event<'a>(
         &'a self,
         event: &'a Event,
     ) -> BoxedFuture<'a, Result<SaveEventStatus, DatabaseError>> {
         Box::pin(async move {
-            let msg = RelayMessage::Event {
-                subscription_id: Cow::Owned(SubscriptionId::new("ndb")),
-                event: Cow::Borrowed(event),
-            };
-            let json: String = msg.as_json();
-            self.db
-                .process_event(&json)
-                .map_err(DatabaseError::backend)?;
+            self.process_event(event)?;
             // TODO: shouldn't return a success since we don't know if the ingestion was successful or not.
             Ok(SaveEventStatus::Success)
         })

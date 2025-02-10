@@ -52,6 +52,13 @@ impl Store {
         Ok(task::spawn_blocking(move || f(db)).await?)
     }
 
+    pub fn process_event(&self, event: &Event) -> Result<(), Error> {
+        let item = IngesterItem::without_feedback(event.clone());
+        // This will never block the current thread according to `std::sync::mpsc::Sender` docs
+        self.ingester.send(item).map_err(|_| Error::MpscSend)?;
+        Ok(())
+    }
+
     /// Store an event.
     pub async fn save_event(&self, event: &Event) -> Result<SaveEventStatus, Error> {
         let (item, rx) = IngesterItem::with_feedback(event.clone());

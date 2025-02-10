@@ -20,10 +20,10 @@ pub(super) struct IngesterItem {
 }
 
 impl IngesterItem {
-    // #[inline]
-    // pub(super) fn without_feedback(event: Event) -> Self {
-    //     Self { event, tx: None }
-    // }
+    #[inline]
+    pub(super) fn without_feedback(event: Event) -> Self {
+        Self { event, tx: None }
+    }
 
     #[must_use]
     pub(super) fn with_feedback(
