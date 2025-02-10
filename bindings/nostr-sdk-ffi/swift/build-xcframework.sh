@@ -23,13 +23,15 @@ rm -rf "${SOURCES_DIR}"     # Remove old Sources dir
 rm -rf "${XCFRAMEWORK_DIR}" # Remove old <NAME>.xcframework dir
 
 # Install targets
-rustup target add aarch64-apple-ios         # iOS arm64
-rustup target add x86_64-apple-ios          # iOS x86_64
-rustup target add aarch64-apple-ios-sim     # simulator mac M1
-rustup target add aarch64-apple-darwin      # mac M1
-rustup target add x86_64-apple-darwin       # mac x86_64
-rustup target add aarch64-apple-ios-macabi  # mac catalyst arm64
-rustup target add x86_64-apple-ios-macabi   # mac catalyst x86_64
+rustup target add aarch64-apple-ios           # iOS arm64
+rustup target add x86_64-apple-ios            # iOS x86_64
+rustup target add aarch64-apple-ios-sim       # simulator mac M1
+rustup target add aarch64-apple-darwin        # mac M1
+rustup target add x86_64-apple-darwin         # mac x86_64
+rustup target add aarch64-apple-ios-macabi    # mac catalyst arm64
+rustup target add x86_64-apple-ios-macabi     # mac catalyst x86_64
+rustup target add aarch64-apple-visionos      # visionOS arm64
+rustup target add aarch64-apple-visionos-sim  # visionOS simulator
 
 # Build iOS and Darwin targets
 cargo build -p nostr-sdk-ffi --lib --release --target x86_64-apple-darwin
@@ -39,6 +41,8 @@ cargo build -p nostr-sdk-ffi --lib --release --target aarch64-apple-ios
 cargo build -p nostr-sdk-ffi --lib --release --target aarch64-apple-ios-sim
 cargo build -p nostr-sdk-ffi --lib --release --target aarch64-apple-ios-macabi
 cargo build -p nostr-sdk-ffi --lib --release --target x86_64-apple-ios-macabi
+cargo build -p nostr-sdk-ffi --lib --release --target aarch64-apple-visionos
+cargo build -p nostr-sdk-ffi --lib --release --target aarch64-apple-visionos-sim
 
 # Make universal dirs
 mkdir -p "${TARGET_DIR}/ios-universal-sim/release"      # iOS Simulator
@@ -90,6 +94,10 @@ xcodebuild -create-xcframework \
     -library "${TARGET_DIR}/darwin-universal/release/${STATIC_LIB}" \
     -headers "${FFI_HEADERS_DIR}" \
     -library "${TARGET_DIR}/maccatalyst-universal/release/${STATIC_LIB}" \
+    -headers "${FFI_HEADERS_DIR}" \
+    -library "${TARGET_DIR}/aarch64-apple-visionos/release/${STATIC_LIB}" \
+    -headers "${FFI_HEADERS_DIR}" \
+    -library "${TARGET_DIR}/aarch64-apple-visionos-sim/release/${STATIC_LIB}" \
     -headers "${FFI_HEADERS_DIR}" \
     -output "${XCFRAMEWORK_DIR}"
 

@@ -8,6 +8,7 @@ let package = Package(
     platforms: [
         .macOS(.v12),
         .iOS(.v14),
+        .visionOS(.v1),
     ],
     products: [
         .library(name: "NostrSDK", targets: ["nostr_sdkFFI", "NostrSDK"]),
